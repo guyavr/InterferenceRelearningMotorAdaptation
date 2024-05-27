@@ -1,0 +1,710 @@
+%% Interference - Data Analysis - Exps 1-3
+clc; clear; close all
+
+addpath('../Functions')
+
+preprocdataDir='../../Data/';
+
+% Comparisons between Standard washout and each of the three experiments.
+% 1- Standard washout (two clamp sessions separated by washout, Exp 1) vs NoFB washout (Exp 2);
+% 2- Standard washout vs gradual rotation washout (Exp 3);
+comp=1; 
+
+for g=1:2 % 1- Standard group: two clamp sessions separated by washout (ctrl); 2- Washout manipulation: No FB / Gradual Rotation (test)
+    
+    if g==1
+        load([preprocdataDir 'AttenuationInterference_AntiClampWashRep_trials']);
+        co_iso=[144, 190, 109; 72, 95, 55]/255; % green
+        co= [[1, 1, 1]*190;[1, 1, 1]*150]/255; % gray
+    else
+        if comp==1
+            load([preprocdataDir 'AttenuationInterference_NoFBWash_trials']);
+            co= [135, 104, 164; 68, 52, 82]/255; % purple
+        elseif comp==2
+            load([preprocdataDir 'AttenuationInterference_GradRotWash_trials']);
+            co= [104, 135, 164; 52, 68, 82]/255; % blue
+        end
+    end
+    
+    nS=max(T.SN);
+    nT=max(T.TN);
+    nC=max(T.CN);
+    
+    % Protocol- hard coded
+    % Naming of phases is based on the standard washout group (g=1), for
+    % which the washout transitions from anti-clamp to veridical feedback
+    % idiosycratincally
+    nC_noFb1=5;
+    nC_FbC1=5;
+    nC_ClampC1=80;
+    nC_NoFbPostC1=10;
+    nC_Wash=110;
+    nC_ClampC2=80;
+    nC_NoFbPostC2=10;
+
+    prot=struct;
+    prot.nC=nC;
+    prot.iNoFbC1=1:nC_noFb1;
+    prot.iFbC1=prot.iNoFbC1(end)+(1:nC_FbC1);
+    prot.iClampC1=prot.iFbC1(end)+(1:nC_ClampC1);
+    prot.iNoFbPostC1=prot.iClampC1(end)+(1:nC_NoFbPostC1);
+    prot.iWashC=prot.iNoFbPostC1(end)+(1:nC_Wash); % No fb / Grad rot washout
+    prot.iClampC2=prot.iWashC(end)+(1:nC_ClampC2);
+    prot.iNoFbPostC2=prot.iClampC2(end)+(1:nC_NoFbPostC2);
+
+    % for trial based analyses
+    prot.nT=nT;
+    prot.iNoFbT1=1:20;
+    prot.iFbT1=21:40;
+    prot.iClampT1=41:360;
+    prot.iNoFbPostT1=361:400;
+    prot.iWashT=401:840;
+    prot.iClampT2=841:1160;
+    prot.iNoFbPostT2=1161:1200;
+
+    prot.iNoFbT=[prot.iNoFbT1 prot.iNoFbPostT1 prot.iNoFbPostT2]; % all NoFb trials
+    prot.iClampT=[prot.iClampT1 prot.iClampT2]; % all clamp trials
+    
+    tpc=nT/nC; % trial per cycle
+    
+    clampCCW=reshape(T.CCW,nT,[])';
+    clampCCW_s=clampCCW(:,1);
+    
+    haT_all=T.hand_theta;
+    
+    % create a matrix of mea (nS X nT)
+    haT_ccw_cw=reshape(haT_all,nT,[])';
+    % switch hand angle direction for ccw clamp conditions
+    haT_cw=haT_ccw_cw;
+    haT_cw((clampCCW_s==1),:)=-haT_ccw_cw((clampCCW_s==1),:);
+    
+    % Reaction time
+    rtT_all=T.RT; % msec
+    rtT=reshape(rtT_all,nT,[])';
+    
+    % Movement time
+    mtT_all=T.MT; % msec
+    mtT=reshape(mtT_all,nT,[])';
+    
+    % Search time
+    stT_all=T.ST;
+    stT=reshape(stT_all,nT,[])';
+    
+    % inter trial interval is basically the search time
+    itiT = stT;
+    
+    % rotation
+    rot_all=T.ri;
+    rot_all_s=reshape(rot_all,nT,[])';
+    rot_all_s_cw=rot_all_s;
+    rot_all_s_cw((clampCCW_s==1),:)=-rot_all_s((clampCCW_s==1),:);
+    % transform to cycles
+    rot_cyc=nan(nS,nC);
+    
+    prot.nC_washBaseFB=nan(nS,1); % Number of baseline cycles within the washout phase
+
+    % target angle
+    ta_all=T.ti;
+    ta_all_s=reshape(ta_all,nT,[])';
+    % nan where original illustration trials from the transition from anti-
+    % clamp. These will be replaced by pseudo target locations that were used
+    % for illustration.
+    ta_all_s(ta_all_s==78)=nan;
+    
+    if (comp==2 && g==2) 
+        % actual feedback/error. For contingent rotation trials, it's the hand
+        % angle+rotation. for clamp trials it's just the clamp size.
+        err_all_s=haT_cw+rot_all_s_cw; 
+        err_all_s(:,prot.iClampT)=-15;
+        err_all_s(:,prot.iNoFbT)=nan;
+    end
+    
+    ha.indivAllCyc=nan(nS,nC); % individuals' time course: mean hand angle of cycles
+    
+    nT_out_allSubjRuns=nan(nS,tpc);
+    nT_org_allSubjRuns=nan(nS,tpc);
+    for s=1:nS
+        % separate ha by targets
+        ta_s=ta_all_s(s,:);
+        i_nan_ta=find(isnan(ta_s));
+        
+        uni_ta=unique(ta_s(isfinite(ta_s)));
+        
+        ha_allTa=nan(tpc,nC);
+        
+        for t=1:tpc
+            i_ta=find(ta_s==uni_ta(t));
+            if length(i_ta)<nC
+                ta_s(i_nan_ta(1))=uni_ta(t);
+                i_nan_ta(1)=[];
+            end
+            i_ta_new=find(ta_s==uni_ta(t));
+            
+            ha_sepTa_org=haT_cw(s,i_ta_new);
+            if length(ha_sepTa_org)<nC
+                ha_sepTa_org=[ha_sepTa_org nan(1,nC-length(ha_sepTa_org))];
+            end
+            [ha_sepTa, nT_org_allSubjRuns(s,t), nT_out_allSubjRuns(s,t)]=removeOutlierTrials_Interference(ha_sepTa_org);  % outlier removal
+            
+            ha_allTa(t,:)=ha_sepTa;
+        end
+        
+        rot_s=rot_all_s_cw(s,:)';
+        rot_s_reshape=reshape(rot_s, tpc,[]);
+        rot_cyc(s,:)=rot_s_reshape(1,:);
+        
+        prot.nC_washBaseFB(s)=length(find(rot_cyc(s,prot.iWashC)==0));
+
+        ha.indivAllCyc(s,:)=nanmean(ha_allTa);
+    end
+    
+    prot.m_nC_washBaseFB = mean(prot.nC_washBaseFB);
+    prot.std_nC_washBaseFB = std(prot.nC_washBaseFB);
+
+    percRemoved=100*sum(sum(nT_out_allSubjRuns))/sum(sum(nT_org_allSubjRuns));
+    
+    %%
+    % Separate sessions to Clamp 1 and Clamp 2- and extract measures
+    nC_base_forPlot=5;
+    
+    iBaseClamp1=[prot.iFbC1((end-nC_base_forPlot+1):end) prot.iClampC1 prot.iNoFbPostC1];
+    iWashClamp2=[prot.iWashC((end-nC_base_forPlot+1):end) prot.iClampC2 prot.iNoFbPostC2];
+        
+    nC_asy=10;
+    asyCyc=length(iBaseClamp1)-length(prot.iNoFbPostC1)-nC_asy+(1:nC_asy);
+    AE_1st_cyc=asyCyc(end)+1; % first cycle of no feedback
+    AE_all_cyc=asyCyc(end)+(1:length(prot.iNoFbPostC1)); %  aftereffect cycles: all no feedback trials
+    
+    % time course base+clamp
+    % without baseline subtraction
+    ha.TC_C1=ha.indivAllCyc(:,iBaseClamp1);
+    ha.TC_C2=ha.indivAllCyc(:,iWashClamp2);
+    
+    % Asymptote
+    ha.asy.indiv=[nanmean(ha.TC_C1(:,asyCyc),2),...
+        nanmean(ha.TC_C2(:,asyCyc),2)];
+    
+    % Aftereffect
+    ha.mAftereffect_all.indiv=[nanmean(ha.TC_C1(:,AE_all_cyc),2),...
+        nanmean(ha.TC_C2(:,AE_all_cyc),2)];
+    
+    ha.aftereffect_1st.indiv=[ha.TC_C1(:,AE_1st_cyc),...
+        ha.TC_C2(:,AE_1st_cyc)];
+    
+    % correlation between washout and attenuation based on aftereffect
+    nC_lateWash=10;
+    lateWashCyc=prot.iWashC(end)-nC_lateWash+(1:nC_lateWash);
+    
+    ha.lateWash_attenAftereffect.indiv=[nanmean(ha.indivAllCyc(:,lateWashCyc),2),...
+        diff(ha.mAftereffect_all.indiv,1,2)]; % executed like this, diff does the same as indiv(:,2)-indiv(:,1)
+    
+    % Measure of learning decay from late learning to 1st cycle of
+    % aftereffect
+    ha.aftereffect_1st_dev_asy.indiv=ha.aftereffect_1st.indiv./ha.asy.indiv;
+
+    if (comp==2 && g==2)
+        % analysis of the distribution of errors experienced during washout
+        % all washout trials
+        washError.RotGrad.trialNum=cell(nS,1);
+        washError.VeridFb.trialNum=cell(nS,1);
+        washError.allWashTrials.indivTrials=cell(nS,1);
+        washError.RotGrad.indivTrials=cell(nS,1);
+        washError.VeridFb.indivTrials=cell(nS,1);
+        washError.allWashTrials.median=nan(nS,1);
+        washError.RotGrad.median=nan(nS,1);
+        washError.VeridFb.median=nan(nS,1);
+        
+        for s=1:nS
+            
+            washError.allWashTrials.indivTrials{s}=err_all_s(s,prot.iWashT);
+            washError.allWashTrials.median(s)=nanmedian(washError.allWashTrials.indivTrials{s},2);
+            washError.allWashTrials.probOpposite(s)=sum(double(washError.allWashTrials.indivTrials{s}>0))/length(washError.allWashTrials.indivTrials{s}); % probability of trials with opposite (positive) error
+            
+            iCWRot=find(rot_all_s_cw(s,:)<0); % includes both clamp and gradual rotation trials
+            washError.RotGrad.trialNum{s}=intersect(iCWRot,prot.iWashT);
+            washError.VeridFb.trialNum{s}=setdiff(prot.iWashT,washError.RotGrad.trialNum{s});
+            
+            washError.RotGrad.indivTrials{s}=err_all_s(s,washError.RotGrad.trialNum{s});
+            washError.VeridFb.indivTrials{s}=err_all_s(s,washError.VeridFb.trialNum{s});
+            
+            washError.RotGrad.median(s)=nanmedian(washError.RotGrad.indivTrials{s},2);
+            washError.VeridFb.median(s)=nanmedian(washError.VeridFb.indivTrials{s},2);
+            
+        end
+        
+        washError.allWashTrials.allSubj=cat(2, washError.allWashTrials.indivTrials{:});
+        washError.RotGrad.allSubj=cat(2, washError.RotGrad.indivTrials{:});
+        washError.VeridFb.allSubj=cat(2, washError.VeridFb.indivTrials{:});
+        
+        washError.allWashTrials.meanAllSubj=mean(washError.allWashTrials.allSubj);
+        washError.RotGrad.meanAllSubj=mean(washError.RotGrad.allSubj);
+        washError.VeridFb.meanAllSubj=mean(washError.VeridFb.allSubj);
+        
+        washError.allWashTrials.stdAllSubj=std(washError.allWashTrials.allSubj);
+        washError.RotGrad.stdAllSubj=std(washError.RotGrad.allSubj);
+        washError.VeridFb.stdAllSubj=std(washError.VeridFb.allSubj);
+        
+        % for correlations with attenuation
+        washError.allWashTrials.corr_attenAftereffect.indiv=[washError.allWashTrials.median diff(ha.mAftereffect_all.indiv,1,2)];
+        washError.RotGrad.corr_attenAftereffect.indiv=[washError.RotGrad.median diff(ha.mAftereffect_all.indiv,1,2)];
+        washError.VeridFb.corr_attenAftereffect.indiv=[washError.VeridFb.median diff(ha.mAftereffect_all.indiv,1,2)];
+
+        for washTrType=2
+            if washTrType==1
+                errWash=washError.allWashTrials;
+            elseif washTrType==2
+                errWash=washError.RotGrad;
+            else
+                errWash=washError.VeridFb;
+            end
+            
+            figure('position',[50 100 500 400])
+            hold on
+            histogram(errWash.allSubj,-40:2:40,'EdgeColor','none','FaceColor',co(1,:),'FaceAlpha',0.6);
+            plot([0 0],[0 400],':k','linewidth',2)
+            plot([-15 -15],[0 400],'-k','linewidth',3)
+            plot([mean(errWash.allSubj) mean(errWash.allSubj)],[0 400],'-','color',.5*co(1,:),'linewidth',4)
+            xlabel('Error (deg)','fontsize',20)
+            ylabel('Number of Trials','fontsize',20)
+            set(gca,'xtick',-30:15:30,'ytick',0:200:1000,'xlim',[-30 30],'ylim',[0 400],'fontsize',20)
+            
+            % Compare to the baseline errors in the long baseline group
+            load('Interference_LongBaseline_ErrorDistribution.mat')
+            % Assess number of trials from to be comparable to the RotGrad
+            % trials.
+            mNumTrials_RotGradWash=round(mean(cellfun(@numel, errWash.trialNum)));
+            errBase_compRotGrad=baseError.errorVal(:,1:mNumTrials_RotGradWash);
+            errBase_compRotGrad_allSubj=reshape(errBase_compRotGrad,[],1);
+
+            figure('position',[50 100 500 400])
+            hold on
+            histogram(errBase_compRotGrad_allSubj,-40:2:40,'EdgeColor','none','FaceColor',[153, 78, 78]/255,'FaceAlpha',0.6);
+            histogram(errWash.allSubj,-40:2:40,'EdgeColor','none','FaceColor',co(1,:),'FaceAlpha',0.6);
+            plot([0 0],[0 600],':k','linewidth',2)
+            plot([-15 -15],[0 500],'-k','linewidth',3)
+            plot([mean(errBase_compRotGrad_allSubj) mean(errBase_compRotGrad_allSubj)],[0 500],'-','color',.8*[153, 78, 78]/255,'linewidth',4)
+            plot([mean(errWash.allSubj) mean(errWash.allSubj)],[0 500],'-','color',.7*co(1,:),'linewidth',4)
+            xlabel('Error (deg)','fontsize',20)
+            ylabel('Number of Trials','fontsize',20)
+            set(gca,'xtick',-30:15:30,'ytick',0:200:1000,'xlim',[-30 30],'ylim',[0 600],'fontsize',20)
+
+        end
+    end
+    
+    % Timing analysis
+    % Reaction Time
+    rt.Clamp.indiv=[nanmedian(rtT(:,prot.iClampC1),2),...
+        nanmedian(rtT(:,prot.iClampC2),2)]; 
+    
+    rt.Aftereffect.indiv=[nanmedian(rtT(:,prot.iNoFbPostC1),2),...
+        nanmedian(rtT(:,prot.iNoFbPostC2),2)]; 
+    
+    % Movement Time
+    mt.Clamp.indiv=[nanmedian(mtT(:,prot.iClampC1),2),...
+        nanmedian(mtT(:,prot.iClampC2),2)]; 
+    
+    mt.Aftereffect.indiv=[nanmedian(mtT(:,prot.iNoFbPostC1),2),...
+        nanmedian(mtT(:,prot.iNoFbPostC2),2)]; 
+    
+    % Inter Trial Interval
+    iti.Clamp.indiv=[nanmedian(itiT(:,prot.iClampC1),2),...
+        nanmedian(itiT(:,prot.iClampC2),2)];
+    
+    iti.Aftereffect.indiv=[nanmedian(itiT(:,prot.iNoFbPostC1),2),...
+        nanmedian(itiT(:,prot.iNoFbPostC2),2)]; 
+    
+    %% Statistical Analyses- within groups
+        
+    % Hand Angle
+    ha.mAftereffect_all = stat_ttest_paired_bf(ha.mAftereffect_all);
+    
+    ha.aftereffect_1st_dev_asy = stat_ttest_paired_bf(ha.aftereffect_1st_dev_asy);
+
+    ha.lateWash_attenAftereffect = stat_corr(ha.lateWash_attenAftereffect);
+    
+    if g==1
+        ha_ctrl=ha;
+        prot_ctrl=prot;
+        nS_ctrl=nS;
+        co_ctrl=co;
+    else
+        ha_test=ha;
+        prot_test=prot;
+        nS_test=nS;
+        co_test=co;
+    end
+end
+
+%% Cluster analysis to identify significant cluster (cycles) differences between conditions
+
+newClusterAna=0;
+
+if newClusterAna
+    nCperE=1; % number of cycles per epoch
+    
+    for g=1:2
+        
+        if g==1
+            ha=ha_ctrl;
+            nS_g=nS_ctrl;
+        else
+            ha=ha_test;
+            nS_g=nS_test;
+        end
+            
+        for bComp=1:3 % 1- baseline; 2- adaptation; 3- aftereffect
+            
+            if bComp==1
+                mC_comp1_subj=ha.indivAllCyc(:,prot.iFbC1);
+                mC_comp2_subj=ha.indivAllCyc(:,prot.iWashC(end-length(prot.iFbC1)+1:end));
+            elseif bComp==2
+                mC_comp1_subj=ha.indivAllCyc(:,prot.iClampC1);
+                mC_comp2_subj=ha.indivAllCyc(:,prot.iClampC2);
+            else
+                mC_comp1_subj=ha.indivAllCyc(:,prot.iNoFbPostC1);
+                mC_comp2_subj=ha.indivAllCyc(:,prot.iNoFbPostC2);
+            end
+            
+            nC_sess=size(mC_comp2_subj,2);
+            nE=nC_sess/nCperE;  % number of epochs
+            
+            HA_C1=nan(nS_g,nE);
+            HA_C2=nan(nS_g,nE);
+            
+            if nCperE>1
+                for e=1:nE
+                    cE=(e-1)*nCperE+(1:nCperE); % trial number in the epoch
+                    HA_C1(:,e)=nanmean(mC_comp1_subj(:,cE),2);
+                    HA_C2(:,e)=nanmean(mC_comp2_subj(:,cE),2);
+                end
+            else
+                HA_C1=mC_comp1_subj;
+                HA_C2=mC_comp2_subj;
+            end
+            
+            % Find the tVal of the cluster
+            alphaCut=0.05;
+            nC_out=15; % maximum number of clusters to look for
+            [extreme_tSum,iSE_cluster_exttSum,nC_cand] = cluster_ttest_multClust(HA_C1,HA_C2,nE,alphaCut,nC_out);
+            
+            % pertmutations to the order of the conditions to calculate a
+            % distribution of tSum
+            nPerm=10000;
+            permOpts=randi([0 1], nS_g,nPerm);
+            extreme_tSum_p=nan(nPerm,nC_out);
+            iSE_cluster_exttSum_p=cell(nPerm,1);
+            for p=1:nPerm
+                % Switch between the conditions in the chosen subjects for each
+                % permutation
+                HA_C1_p=HA_C1;
+                HA_C2_p=HA_C2;
+                
+                sCondSwitch=find(permOpts(:,p));
+                HA_C1_p(sCondSwitch,:)=HA_C2(sCondSwitch,:);
+                HA_C2_p(sCondSwitch,:)=HA_C1(sCondSwitch,:);
+                
+                [extreme_tSum_p(p,:),iSE_cluster_exttSum_p{p},~] = cluster_ttest_multClust(HA_C1_p,HA_C2_p,nE,alphaCut,nC_out);
+                
+            end
+            
+            cmap = colormap('lines');
+            close
+            
+            per_outRange=nan(1,nC_out);
+            for c=1:nC_out
+                % Since tSum can be wither positive or negative, check how
+                % many times we got higher or lower (respectively) than this value.                
+                if extreme_tSum(c)>0
+                    n_outRange=find( extreme_tSum_p(:,1) > extreme_tSum(c));
+                else
+                    n_outRange=find( extreme_tSum_p(:,1) < extreme_tSum(c));
+                end
+                
+                if n_outRange
+                    per_outRange(c)=length(n_outRange)/nPerm;
+                else
+                    per_outRange(c)=0;
+                end
+            end
+            
+            if bComp==1
+                clusterAnaResults.baseline.nC_out=nC_cand;
+                clusterAnaResults.baseline.iSE_cluster_exttSum=iSE_cluster_exttSum;
+                clusterAnaResults.baseline.per_outRange=per_outRange;
+                clusterAnaResults.baseline.extreme_tSum=extreme_tSum;
+                clusterAnaResults.baseline.extreme_tSum_p=extreme_tSum_p;
+            elseif bComp==2
+                clusterAnaResults.adaptation.nC_out=nC_cand;
+                clusterAnaResults.adaptation.iSE_cluster_exttSum=iSE_cluster_exttSum;
+                clusterAnaResults.adaptation.per_outRange=per_outRange;
+                clusterAnaResults.adaptation.extreme_tSum=extreme_tSum;
+                clusterAnaResults.adaptation.extreme_tSum_p=extreme_tSum_p;
+            else
+                clusterAnaResults.aftereffect.nC_out=nC_cand;
+                clusterAnaResults.aftereffect.iSE_cluster_exttSum=iSE_cluster_exttSum;
+                clusterAnaResults.aftereffect.per_outRange=per_outRange;
+                clusterAnaResults.aftereffect.extreme_tSum=extreme_tSum;
+                clusterAnaResults.aftereffect.extreme_tSum_p=extreme_tSum_p;
+            end
+            
+        end
+        
+        if g==1
+            clusterAnaResults_ctrl=clusterAnaResults;
+        else
+            clusterAnaResults_test=clusterAnaResults;
+        end
+        
+    end
+    
+    if comp==1
+        save('clusterAnaResults_Interference_StandardVsNoFBWash','clusterAnaResults_ctrl','clusterAnaResults_test')
+    elseif comp==2
+        save('clusterAnaResults_Interference_StandardVsRotGradWash','clusterAnaResults_ctrl','clusterAnaResults_test')
+    end
+    
+else
+    
+    if comp==1
+        load('clusterAnaResults_Interference_StandardVsNoFBWash')
+    elseif comp==2
+        load('clusterAnaResults_Interference_StandardVsRotGradWash')
+    end
+        
+end
+
+%% Cluster analysis- between ctrl and test group- all cycles
+
+newClusterAna_TestCtrl_AllCyc=0;
+
+if newClusterAna_TestCtrl_AllCyc
+    
+    nCperE=1; % number of cycles per epoch
+            
+    for bComp=1:7 % 1- no fb; 2- baseline; 3- adaptation 1; 4- aftereffect 1; 5- washout; 6- adaptation 2; 7- aftereffect 2
+
+        if bComp==1
+            mC_g1_subj=ha_test.indivAllCyc(:,prot.iNoFbC1);
+            mC_g2_subj=ha_ctrl.indivAllCyc(:,prot.iNoFbC1);
+        elseif bComp==2
+            mC_g1_subj=ha_test.indivAllCyc(:,prot.iFbC1);
+            mC_g2_subj=ha_ctrl.indivAllCyc(:,prot.iFbC1);
+        elseif bComp==3
+            mC_g1_subj=ha_test.indivAllCyc(:,prot.iClampC1);
+            mC_g2_subj=ha_ctrl.indivAllCyc(:,prot.iClampC1);
+        elseif bComp==4
+            mC_g1_subj=ha_test.indivAllCyc(:,prot.iNoFbPostC1);
+            mC_g2_subj=ha_ctrl.indivAllCyc(:,prot.iNoFbPostC1);
+        elseif bComp==5
+            mC_g1_subj=ha_test.indivAllCyc(:,prot.iWashC);
+            mC_g2_subj=ha_ctrl.indivAllCyc(:,prot.iWashC);
+        elseif bComp==6
+            mC_g1_subj=ha_test.indivAllCyc(:,prot.iClampC2);
+            mC_g2_subj=ha_ctrl.indivAllCyc(:,prot.iClampC2);
+        elseif bComp==7
+            mC_g1_subj=ha_test.indivAllCyc(:,prot.iNoFbPostC2);
+            mC_g2_subj=ha_ctrl.indivAllCyc(:,prot.iNoFbPostC2);
+        end
+
+        nC_sess=size(mC_g2_subj,2);
+        nE=nC_sess/nCperE;  % number of epochs
+
+        HA_C1=nan(nS_test,nE);
+        HA_C2=nan(nS_ctrl,nE);
+
+        if nCperE>1
+            for e=1:nE
+                cE=(e-1)*nCperE+(1:nCperE); % trial number in the epoch
+                HA_C1(:,e)=nanmean(mC_g1_subj(:,cE),2);
+                HA_C2(:,e)=nanmean(mC_g2_subj(:,cE),2);
+            end
+        else
+            HA_C1=mC_g1_subj;
+            HA_C2=mC_g2_subj;
+        end
+
+        % Find the tVal of the cluster
+        alphaCut=0.05;
+        nC_out=12; % maximum number of clusters to look for
+        [extreme_tSum,iSE_cluster_exttSum,nC_cand] = cluster_ttest2_multClust(HA_C1,HA_C2,nE,alphaCut,nC_out);
+
+        % pertmutations to the order of the conditions to calculate a
+        % distribution of tSum
+        nPerm=10000;
+        if nS_ctrl<=nS_test 
+            nS_perm=nS_ctrl;
+        else
+            nS_perm=nS_test;
+        end
+        permOpts=randi([0 1], nS_perm,nPerm);
+        extreme_tSum_p=nan(nPerm,nC_out);
+        iSE_cluster_exttSum_p=cell(nPerm,1);
+        for p=1:nPerm
+            % Switch between the conditions in the chosen subjects for each
+            % permutation
+            sCondSwitch=find(permOpts(:,p));
+            if nS_test>nS_ctrl % shuffle the larger group 
+                sShuffleLarge=randperm(nS_test);
+                HA_C1_new=HA_C1(sShuffleLarge,:);
+                HA_C2_new=HA_C2;
+            elseif nS_ctrl>nS_test
+                sShuffleLarge=randperm(nS_ctrl);
+                HA_C2_new=HA_C2(sShuffleLarge,:);
+                HA_C1_new=HA_C1;
+            else
+                HA_C1_new=HA_C1;
+                HA_C2_new=HA_C2;
+            end
+
+            HA_C1_p=HA_C1_new;
+            HA_C2_p=HA_C2_new;
+
+            HA_C1_p(sCondSwitch,:)=HA_C2_new(sCondSwitch,:);
+            HA_C2_p(sCondSwitch,:)=HA_C1_new(sCondSwitch,:);
+
+            [extreme_tSum_p(p,:),iSE_cluster_exttSum_p{p},~] = cluster_ttest2_multClust(HA_C1_p,HA_C2_p,nE,alphaCut,nC_out);
+
+        end
+
+        cmap = colormap('lines');
+        close
+
+        per_outRange=nan(1,nC_out);
+        for c=1:nC_out
+
+            if extreme_tSum(c)>0
+                n_outRange=find( extreme_tSum_p(:,1) > extreme_tSum(c));
+            else
+                n_outRange=find( extreme_tSum_p(:,1) < extreme_tSum(c));
+            end
+
+            if n_outRange
+                per_outRange(c)=length(n_outRange)/nPerm;
+            else
+                per_outRange(c)=0;
+            end
+
+        end
+
+        if bComp==1
+                clusterAnaResults_CtrlvsTest.noFb.nC_out=nC_cand;
+                clusterAnaResults_CtrlvsTest.noFb.iSE_cluster_exttSum=iSE_cluster_exttSum;
+                clusterAnaResults_CtrlvsTest.noFb.per_outRange=per_outRange;
+                clusterAnaResults_CtrlvsTest.noFb.extreme_tSum=extreme_tSum;
+                clusterAnaResults_CtrlvsTest.noFb.extreme_tSum_p=extreme_tSum_p;
+        elseif bComp==2
+                clusterAnaResults_CtrlvsTest.baseline.nC_out=nC_cand;
+                clusterAnaResults_CtrlvsTest.baseline.iSE_cluster_exttSum=iSE_cluster_exttSum;
+                clusterAnaResults_CtrlvsTest.baseline.per_outRange=per_outRange;
+                clusterAnaResults_CtrlvsTest.baseline.extreme_tSum=extreme_tSum;
+                clusterAnaResults_CtrlvsTest.baseline.extreme_tSum_p=extreme_tSum_p;
+        elseif bComp==3
+                clusterAnaResults_CtrlvsTest.adaptation1.nC_out=nC_cand;
+                clusterAnaResults_CtrlvsTest.adaptation1.iSE_cluster_exttSum=iSE_cluster_exttSum;
+                clusterAnaResults_CtrlvsTest.adaptation1.per_outRange=per_outRange;
+                clusterAnaResults_CtrlvsTest.adaptation1.extreme_tSum=extreme_tSum;
+                clusterAnaResults_CtrlvsTest.adaptation1.extreme_tSum_p=extreme_tSum_p;
+        elseif bComp==4
+                clusterAnaResults_CtrlvsTest.aftereffect1.nC_out=nC_cand;
+                clusterAnaResults_CtrlvsTest.aftereffect1.iSE_cluster_exttSum=iSE_cluster_exttSum;
+                clusterAnaResults_CtrlvsTest.aftereffect1.per_outRange=per_outRange;
+                clusterAnaResults_CtrlvsTest.aftereffect1.extreme_tSum=extreme_tSum;
+                clusterAnaResults_CtrlvsTest.aftereffect1.extreme_tSum_p=extreme_tSum_p;
+        elseif bComp==5
+                clusterAnaResults_CtrlvsTest.washout.nC_out=nC_cand;
+                clusterAnaResults_CtrlvsTest.washout.iSE_cluster_exttSum=iSE_cluster_exttSum;
+                clusterAnaResults_CtrlvsTest.washout.per_outRange=per_outRange;
+                clusterAnaResults_CtrlvsTest.washout.extreme_tSum=extreme_tSum;
+                clusterAnaResults_CtrlvsTest.washout.extreme_tSum_p=extreme_tSum_p;
+        elseif bComp==6
+                clusterAnaResults_CtrlvsTest.adaptation2.nC_out=nC_cand;
+                clusterAnaResults_CtrlvsTest.adaptation2.iSE_cluster_exttSum=iSE_cluster_exttSum;
+                clusterAnaResults_CtrlvsTest.adaptation2.per_outRange=per_outRange;
+                clusterAnaResults_CtrlvsTest.adaptation2.extreme_tSum=extreme_tSum;
+                clusterAnaResults_CtrlvsTest.adaptation2.extreme_tSum_p=extreme_tSum_p;
+        elseif bComp==7
+                clusterAnaResults_CtrlvsTest.aftereffect2.nC_out=nC_cand;
+                clusterAnaResults_CtrlvsTest.aftereffect2.iSE_cluster_exttSum=iSE_cluster_exttSum;
+                clusterAnaResults_CtrlvsTest.aftereffect2.per_outRange=per_outRange;
+                clusterAnaResults_CtrlvsTest.aftereffect2.extreme_tSum=extreme_tSum;
+                clusterAnaResults_CtrlvsTest.aftereffect2.extreme_tSum_p=extreme_tSum_p;
+        end
+
+    end
+
+    if comp==1
+        save('clusterAnaResults_Interference_TestCtrl_AllCyc_StandardVsNoFBWash','clusterAnaResults_CtrlvsTest')
+    elseif comp==2
+        save('clusterAnaResults_Interference_TestCtrl_AllCyc_StandardVsRotGradWash','clusterAnaResults_CtrlvsTest')
+    end
+    
+else
+    
+    if comp==1
+        load('clusterAnaResults_Interference_TestCtrl_AllCyc_StandardVsNoFBWash')
+    elseif comp==2
+        load('clusterAnaResults_Interference_TestCtrl_AllCyc_StandardVsRotGradWash')
+    end
+    
+end
+
+
+
+%% Summary time course plots
+
+plotExpDesign_Interference_StandardWash(prot_ctrl,co_iso)
+plotExpDesign_Interference_StandardWash(prot_ctrl,co_ctrl)
+if comp==1
+    plotExpDesign_Interference_NoFBWash(prot_test,co_test)
+elseif comp==2
+    plotExpDesign_Interference_GradRotWash(prot_test,co_test)
+end
+    
+testFront=1;
+if testFront
+    sha_bothG={ha_ctrl.indivAllCyc; ha_test.indivAllCyc};
+    prot_bothG={prot_ctrl; prot_test};
+    col_bothG={co_ctrl; co_test};
+else
+    sha_bothG={ha_test.indivAllCyc; ha_ctrl.indivAllCyc};
+    prot_bothG={prot_test; prot_ctrl};
+    col_bothG={co_test; co_ctrl};
+end
+
+plotMeanTimeCourse_allCyc_Interference(ha_ctrl.indivAllCyc,prot_ctrl,co_iso) 
+
+if comp==1
+    plotMeanTimeCourse_allCyc_Interference_NoFBVsCtrl(sha_bothG,prot_bothG,col_bothG)% mean time course - test vs ctrl group
+else
+    plotMeanTimeCourse_allCyc_Interference_TestVsCtrl(sha_bothG,prot_bothG,col_bothG)% mean time course - test vs ctrl group
+    plotMeanTimeCourse_Washout_GradVsCtrl_clusterAna(sha_bothG,prot_bothG,col_bothG,clusterAnaResults_CtrlvsTest)
+end
+
+%  Clamp 1 vs Clamp 2
+sha_clamp_1_2_ctrl={ha_ctrl.TC_C1;
+    ha_ctrl.TC_C2};
+sha_clamp_1_2_test={ha_test.TC_C1;
+    ha_test.TC_C2};
+
+% Clamp 1 vs Clamp 2- plot mean time courses with the results of the
+% cluster analysis
+plotMeanTimeCourse_clamp_Interference_clusterAna(sha_clamp_1_2_ctrl,prot_ctrl,nC_base_forPlot,clusterAnaResults_ctrl,co_iso)
+plotMeanTimeCourse_clamp_Interference_clusterAna(sha_clamp_1_2_test,prot_test,nC_base_forPlot,clusterAnaResults_test,co_test)
+
+%% Summary analysis bar plots for aftereffect
+
+% aftereffect - all cycles
+yLabel='Reach angle (deg)';
+yLim=[10 20; -24 24; -24 24];
+yTick={0:5:50; -20:10:20; -20:10:20};
+plotSumAnalysis_2within_mean_diff(ha_ctrl.mAftereffect_all,co_iso,yLabel,yLim,yTick)
+plotSumAnalysis_2within_mean_diff(ha_test.mAftereffect_all,co_test,yLabel,yLim,yTick)
+
+if comp==1
+    col=mean(co_test);
+    xyLabel={'Late washout (deg)';'Aftereffect 2-1 (deg)'};
+    xyLim=[-5 25; -15 15];
+    xyTick={-10:10:30;-20:10:40};
+    plotCorr(ha_test.lateWash_attenAftereffect,col,xyLabel,xyLim,xyTick)
+end
+

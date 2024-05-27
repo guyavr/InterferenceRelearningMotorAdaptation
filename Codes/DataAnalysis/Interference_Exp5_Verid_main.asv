@@ -1,0 +1,355 @@
+%% Interference - Data Analysis - Exp 5- Variable Experience with Veridical FB
+clc; clear; close all
+
+addpath('../Functions')
+
+preprocdataDir='../../Data/';
+
+load([preprocdataDir 'AttenuationInterference_Verid_5_45_85_trials']);
+
+c_Sh = [193, 133, 133]/255; % light red
+c_Me = [153, 78, 78]/255; % medium red
+c_Lo = [84,42,42]/255; % dark red
+
+nS=max(T.SN);
+nT=max(T.TN);
+
+% Protocol- hard coded
+nC_noFb1=5;
+nC_Fb_1targ=40;
+nC_Fb_2targ=40;
+nC_Fb_alltarg=5;
+nC_FbC1=nC_Fb_1targ + nC_Fb_2targ + nC_Fb_alltarg;
+nC_ClampC1=40;
+nC_NoFbPostC1=10;
+
+nC = nC_noFb1 + nC_FbC1 + nC_ClampC1 + nC_NoFbPostC1;
+
+prot=struct;
+prot.nC=nC;
+prot.iNoFbC1=1:nC_noFb1;
+prot.iFbC1=prot.iNoFbC1(end)+(1:nC_FbC1);
+prot.iClampC1=prot.iFbC1(end)+(1:nC_ClampC1);
+prot.iNoFbPostC1=prot.iClampC1(end)+(1:nC_NoFbPostC1);
+
+prot.iFb_1targ=prot.iNoFbC1(end)+(1:nC_Fb_1targ);
+prot.iFb_2targ=prot.iFb_1targ(end)+(1:nC_Fb_2targ);
+prot.iFb_alltarg=prot.iFb_2targ(end)+(1:nC_Fb_alltarg);
+
+tpc=nT/nC; % trial per cycle
+
+clampCCW=reshape(T.CCW,nT,[])';
+clampCCW_s=clampCCW(:,1);
+
+% rotation
+rot_all=T.ri;
+rot_all_s=reshape(rot_all,nT,[])';
+rot_all_s_ccw=rot_all_s;
+rot_all_s_ccw((clampCCW_s==0),:)=-rot_all_s((clampCCW_s==0),:);
+% transform to cycles
+rot_cyc=nan(nS,nC);
+
+% feedback
+fb_all=T.fbi;
+fb_all_s=reshape(fb_all,nT,[])';
+
+haT_all=T.hand_theta;
+
+% create a matrix of mea (nS X nT)
+haT_ccw_cw=reshape(haT_all,nT,[])';
+% switch hand angle direction for ccw clamp conditions
+haT_cw=haT_ccw_cw;
+haT_cw((clampCCW_s==1),:)=-haT_ccw_cw((clampCCW_s==1),:);
+
+% Reaction time
+rtT_all=T.RT; % msec
+rtT=reshape(rtT_all,nT,[])';
+
+% Movement time
+mtT_all=T.MT; % msec
+mtT=reshape(mtT_all,nT,[])';
+
+% Search time
+stT_all=T.ST;
+stT=reshape(stT_all,nT,[])';
+
+% inter trial interval is basically the search time
+itiT = stT;
+
+% target angle
+ta_all=T.ti;
+ta_all_s=reshape(ta_all,nT,[])';
+
+%%
+ha_allTaSorted_vFB=cell(nS,1);
+
+ha.indivTarg_vSh=nan(nS,nC); % individuals' time course for targ associated with Short (5) veridical FB trials before clamp
+ha.indivTarg_vMe=nan(nS,nC);  % individuals' time course for targ associated with Medium (45) veridical FB trials before clamp
+ha.indivTarg_vLo=nan(nS,nC);  % individuals' time course for targ associated with Long (85) veridical FB trials before clamp
+
+% tpc is the maximum trials per cycle (doesn't mean that all cycles have
+% the same number of trials)
+ta1=ta_all_s(1,:);
+uni_ta1=unique(ta1(isfinite(ta1))); % output in sorted order
+tpc=length(uni_ta1);
+
+nT_out_allSubjRuns=nan(nS,tpc);
+nT_org_allSubjRuns=nan(nS,tpc);
+
+for s=1:nS
+    % separate ha by targets
+    ta_s=ta_all_s(s,:);
+    i_nan_ta=find(isnan(ta_s));
+
+    uni_ta=unique(ta_s(isfinite(ta_s))); % output in sorted order
+    
+    ha_allTa_cell=cell(tpc,1);
+    ha_allTa_org=nan(tpc,nC);
+    ha_allTa=nan(tpc,nC);
+    
+    for targ=1:tpc
+        i_ta=find(ta_s==uni_ta(targ));
+        ha_allTa_cell{targ}=haT_cw(s,i_ta);
+        ha_allTa_org(targ,prot.iNoFbC1)=ha_allTa_cell{targ}(prot.iNoFbC1);
+        nRemainingCyc=length(ha_allTa_cell{targ})-nC_noFb1;
+        iRemainingCyc=(nC-nRemainingCyc+1):nC;
+        ha_allTa_org(targ,iRemainingCyc)=ha_allTa_cell{targ}((nC_noFb1+1):end);
+
+        ha_sepTa_org=ha_allTa_org(targ,:);
+        [ha_sepTa, nT_org_allSubjRuns(s,targ), nT_out_allSubjRuns(s,targ)]=removeOutlierTrials_Interference(ha_sepTa_org);  % outlier removal
+        ha_allTa(targ,:)=ha_sepTa;
+    end
+    
+    % The ha_allTa data i sorganized according to the target location in
+    % ascending order ([10 40]->[130 160]->[250 280]). Find which is associated with
+    % each veridical feedback condition
+    fb_s=fb_all_s(s,:);
+    num_vFB_targ1=sum(fb_s(ta_s==uni_ta(1)))-nC_ClampC1;
+    num_vFB_targ2=sum(fb_s(ta_s==uni_ta(2)))-nC_ClampC1;
+    num_vFB_targ3=sum(fb_s(ta_s==uni_ta(3)))-nC_ClampC1;
+    num_vFB_targ4=sum(fb_s(ta_s==uni_ta(4)))-nC_ClampC1;
+    num_vFB_targ5=sum(fb_s(ta_s==uni_ta(5)))-nC_ClampC1;
+    num_vFB_targ6=sum(fb_s(ta_s==uni_ta(6)))-nC_ClampC1;
+    num_vFB_allTarg=[num_vFB_targ1; num_vFB_targ2; num_vFB_targ3; num_vFB_targ4; num_vFB_targ5; num_vFB_targ6];
+    [num_vFB_sorted,num_vFB_sortIdx] = sort(num_vFB_allTarg);
+    
+    ha_allTaSorted_vFB{s}=ha_allTa(num_vFB_sortIdx,:);
+    ha.indivTarg_vSh(s,:)=nanmean(ha_allTaSorted_vFB{s}(1:2,:));
+    ha.indivTarg_vMe(s,:)=nanmean(ha_allTaSorted_vFB{s}(3:4,:));
+    ha.indivTarg_vLo(s,:)=nanmean(ha_allTaSorted_vFB{s}(5:6,:));
+
+end
+
+percRemoved=100*sum(sum(nT_out_allSubjRuns))/sum(sum(nT_org_allSubjRuns));
+
+%%
+close all
+% Separate sessions to Clamp 1 and Clamp 2- and extract measures
+nC_base=5;
+
+iBaseClamp1=[prot.iFbC1((end-nC_base+1):end) prot.iClampC1 prot.iNoFbPostC1];
+
+EA_3_7=3:7;
+
+nC_asy=10;
+asyCyc=length(iBaseClamp1)-length(prot.iNoFbPostC1)-nC_asy+(1:nC_asy);
+AE_1st_cyc=asyCyc(end)+1; % first trial of no feedback
+AE_all_cyc=asyCyc(end)+(1:length(prot.iNoFbPostC1)); % all no feedback trials
+% AE_1st_cyc_ctrl=prot_ctrl.iNoFbPostC2(1);
+
+% time course base+clamp
+% without baseline subtraction
+ha.TC_vSh_C1 = ha.indivTarg_vSh(:,iBaseClamp1);
+ha.TC_vMe_C1 = ha.indivTarg_vMe(:,iBaseClamp1);
+ha.TC_vLo_C1 = ha.indivTarg_vLo(:,iBaseClamp1);
+
+% Early Adaptation
+ha.EA.indiv=[nanmean(ha.TC_vSh_C1(:,nC_base+EA_3_7),2),...
+    nanmean(ha.TC_vMe_C1(:,nC_base+EA_3_7),2),...
+    nanmean(ha.TC_vLo_C1(:,nC_base+EA_3_7),2)];
+
+% Asymptote
+ha.asy.indiv=[nanmean(ha.TC_vSh_C1(:,asyCyc),2),...
+    nanmean(ha.TC_vMe_C1(:,asyCyc),2),...
+    nanmean(ha.TC_vLo_C1(:,asyCyc),2)];
+    
+% Aftereffect
+ha.mAftereffect_all.indiv=[nanmean(ha.TC_vSh_C1(:,AE_all_cyc),2),...
+    nanmean(ha.TC_vMe_C1(:,AE_all_cyc),2),...
+    nanmean(ha.TC_vLo_C1(:,AE_all_cyc),2)];
+
+% calculate percentage of negative error during baseline
+perc_opposErrVerid_vLo= sum(ha.indivTarg_vLo(:,prot.iFbC1)<0,2)/nC_FbC1; % long baseline group
+mean_ErrVerid_vLo= mean(ha.indivTarg_vLo(:,prot.iFbC1),2); % long baseline group
+
+%% Statistical Analyses- within groups
+
+% Hand Angle
+cond=[5, 45, 85];
+ha.mAftereffect_all_MixedEffect = stat_MixedEffect(ha.mAftereffect_all.indiv,cond);
+
+%% Cluster analysis to identify significant cluster (cycles) differences between conditions in the test group
+% using regression
+
+newClusterAna=0;
+
+if newClusterAna
+
+    nCperE=1; % number of cycles per epoch
+
+    mC_cond1_subj_all=ha.TC_vSh_C1;
+    mC_cond2_subj_all=ha.TC_vMe_C1;
+    mC_cond3_subj_all=ha.TC_vLo_C1;
+
+    for block=1:3 % 1- baseline; 2- adaptation; 3- aftereffect
+
+        if block==1
+            mC_cond1_subj=mC_cond1_subj_all(:,1:nC_base);
+            mC_cond2_subj=mC_cond2_subj_all(:,1:nC_base);
+            mC_cond3_subj=mC_cond3_subj_all(:,1:nC_base);
+        elseif block==2
+            mC_cond1_subj=mC_cond1_subj_all(:,nC_base+(1:length(prot.iClampC1)));
+            mC_cond2_subj=mC_cond2_subj_all(:,nC_base+(1:length(prot.iClampC1)));
+            mC_cond3_subj=mC_cond3_subj_all(:,nC_base+(1:length(prot.iClampC1)));
+        else
+            mC_cond1_subj=mC_cond1_subj_all(:,nC_base+length(prot.iClampC1)+1:end);
+            mC_cond2_subj=mC_cond2_subj_all(:,nC_base+length(prot.iClampC1)+1:end);
+            mC_cond3_subj=mC_cond3_subj_all(:,nC_base+length(prot.iClampC1)+1:end);
+        end
+
+        nS=size(mC_cond2_subj,1);
+        nC_sess=size(mC_cond2_subj,2);
+        nE=nC_sess/nCperE;  % number of epochs
+
+        HA_C1=nan(nS,nE);
+        HA_C2=nan(nS,nE);
+        HA_C3=nan(nS,nE);
+
+        if nCperE>1
+            for e=1:nE
+                cE=(e-1)*nCperE+(1:nCperE); % trial number in the epoch
+                HA_C1(:,e)=nanmean(mC_cond1_subj(:,cE),2);
+                HA_C2(:,e)=nanmean(mC_cond2_subj(:,cE),2);
+                HA_C3(:,e)=nanmean(mC_cond3_subj(:,cE),2);
+            end
+        else
+            HA_C1=mC_cond1_subj;
+            HA_C2=mC_cond2_subj;
+            HA_C3=mC_cond3_subj;
+        end
+
+        % Find the fVal of the cluster
+        alphaCut=0.05;
+        nC_out=15; % maximum number of clusters to look for
+        [extreme_tSum,iSE_cluster_exttSum, nC_cand] = cluster_regression_multClust(HA_C1,HA_C2,HA_C3,nE,alphaCut,nC_out);
+
+        nPerm=10000;
+        permAssign=perms([1 2 3]);
+        permOpts=randi([1 size(permAssign,1)], nS,nPerm); % for 3 conditions there are 6 possible permutations
+        extreme_tSum_p=nan(nPerm,nC_out);
+        iSE_cluster_exttSum_p=cell(nPerm,1);
+        for p=1:nPerm
+            % Switch between the conditions in the chosen subjects for each
+            % permutation
+            HA_C1_p=nan(nS,nE);
+            HA_C2_p=nan(nS,nE);
+            HA_C3_p=nan(nS,nE);
+            
+            sPermCond1=find(permOpts(:,p)==1);
+            HA_C1_p(sPermCond1,:)=HA_C3(sPermCond1,:);
+            HA_C2_p(sPermCond1,:)=HA_C2(sPermCond1,:);
+            HA_C3_p(sPermCond1,:)=HA_C1(sPermCond1,:);
+            
+            sPermCond2=find(permOpts(:,p)==2);
+            HA_C1_p(sPermCond2,:)=HA_C3(sPermCond2,:);
+            HA_C2_p(sPermCond2,:)=HA_C1(sPermCond2,:);
+            HA_C3_p(sPermCond2,:)=HA_C2(sPermCond2,:);
+            
+            sPermCond3=find(permOpts(:,p)==3);
+            HA_C1_p(sPermCond3,:)=HA_C2(sPermCond3,:);
+            HA_C2_p(sPermCond3,:)=HA_C3(sPermCond3,:);
+            HA_C3_p(sPermCond3,:)=HA_C1(sPermCond3,:);
+            
+            sPermCond4=find(permOpts(:,p)==4);
+            HA_C1_p(sPermCond4,:)=HA_C2(sPermCond4,:);
+            HA_C2_p(sPermCond4,:)=HA_C1(sPermCond4,:);
+            HA_C3_p(sPermCond4,:)=HA_C3(sPermCond4,:);
+            
+            sPermCond5=find(permOpts(:,p)==5);
+            HA_C1_p(sPermCond5,:)=HA_C1(sPermCond5,:);
+            HA_C2_p(sPermCond5,:)=HA_C3(sPermCond5,:);
+            HA_C3_p(sPermCond5,:)=HA_C2(sPermCond5,:);
+            
+            sPermCond6=find(permOpts(:,p)==6);
+            HA_C1_p(sPermCond6,:)=HA_C1(sPermCond6,:);
+            HA_C2_p(sPermCond6,:)=HA_C2(sPermCond6,:);
+            HA_C3_p(sPermCond6,:)=HA_C3(sPermCond6,:);
+            
+            [extreme_tSum_p(p,:),iSE_cluster_exttSum_p{p}, ~] = cluster_regression_multClust(HA_C1_p,HA_C2_p,HA_C3_p,nE,alphaCut,nC_out);
+
+        end
+
+        per_outRange=nan(1,nC_out);
+        for c=1:nC_cand
+            if extreme_tSum(c)>0
+                n_outRange=find( extreme_tSum_p(:,1) > extreme_tSum(c));
+            else
+                n_outRange=find( extreme_tSum_p(:,1) < extreme_tSum(c));
+            end
+
+            if n_outRange
+                per_outRange(c)=length(n_outRange)/nPerm;
+            else
+                per_outRange(c)=0;
+            end
+
+        end
+
+        if block==1
+            clusterAnaResults.baseline.nC_out=nC_cand;
+            clusterAnaResults.baseline.iSE_cluster_exttSum=iSE_cluster_exttSum;
+            clusterAnaResults.baseline.per_outRange=per_outRange;
+            clusterAnaResults.baseline.extreme_tSum=extreme_tSum;
+            clusterAnaResults.baseline.extreme_tSum_p=extreme_tSum_p;
+        elseif block==2
+            clusterAnaResults.adaptation.nC_out=nC_cand;
+            clusterAnaResults.adaptation.iSE_cluster_exttSum=iSE_cluster_exttSum;
+            clusterAnaResults.adaptation.per_outRange=per_outRange;
+            clusterAnaResults.adaptation.extreme_tSum=extreme_tSum;
+            clusterAnaResults.adaptation.extreme_tSum_p=extreme_tSum_p;
+        else
+            clusterAnaResults.aftereffect.nC_out=nC_cand;
+            clusterAnaResults.aftereffect.iSE_cluster_exttSum=iSE_cluster_exttSum;
+            clusterAnaResults.aftereffect.per_outRange=per_outRange;
+            clusterAnaResults.aftereffect.extreme_tSum=extreme_tSum;
+            clusterAnaResults.aftereffect.extreme_tSum_p=extreme_tSum_p;
+        end
+
+    end
+    
+    save('clusterAnaResults_Verid','clusterAnaResults')
+
+else
+
+    load('clusterAnaResults_Verid')
+
+end
+
+%% Summary time course plots
+col_all=[c_Lo; c_Me; c_Sh];
+
+plotExpDesign_Interference_Verid(prot,col_all)
+
+sha_all={ha.indivTarg_vLo; ha.indivTarg_vMe; ha.indivTarg_vSh};
+
+plotMeanTimeCourse_allCyc_AttenuationVerid_clusterAna(sha_all,prot,col_all, clusterAnaResults)% mean time course - test vs ctrl group
+
+%% Summary analysis plots
+
+% aftereffect - mean all cycles
+yLabel='Reach angle (deg)';
+yLim=[5 20; -6 6; -0.2 0.2];
+yTick={0:5:50; -6:6:6; -0.2:0.2:0.2};
+col=[c_Sh;c_Me;c_Lo];
+plotSumAnalysis_3markers_MixedEffect_violin_indiv_slope_Verid(ha.mAftereffect_all_MixedEffect,col,yLabel,yLim,yTick)
+
