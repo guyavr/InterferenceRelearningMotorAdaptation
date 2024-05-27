@@ -7,24 +7,30 @@ DataAnalysis: This folder includes custom-written Matlab codes (.m) to analyze t
 Functions: Contains all custom-written functions for statistical analyses and plotting (called by data analysis codes).
 
 ### Data:
-Includes raw data collected during the experiments
+Includes raw data collected during the experiments:
 
   Experiment 1- AttenuationInterference_AntiClampWashRep_trials.mat
+  
   Experiment 2- AttenuationInterference_NoFBWash_trials.mat
+  
   Experiment 3- AttenuationInterference_GradRotWash_trials.mat
-  Experiment 4- AttenuationInterference_AntiClamp_Verid85_trials.mat
-  Experiment 5- AttenuationInterference_Verid_5_45_85_trials.mat
+  
+  Experiment 4- AttenuationInterference_AntiClamp_Verid85_trials.mat 
+  
+  Experiment 5- AttenuationInterference_Verid_5_45_85_trials.mat 
+
 
   Each data file contain a Table T with the following variables (variables can change across experiments):
+    
     SN- subject number
     TN- trial number
     CCW- rotation direction during learning: 1- Counterclockwise; 0- Clockwise
     ti- target location (deg)
     ri- rotation size and direction: positive values- counterclockwise rotation; negative values- clockwise rotation.
-    hand_theta- hand movement direction with respect to the target direction at the radial distance to the target (this variable was used as the 'hand angle' measure in the paper)
+    hand_theta- hand movement direction with respect to the target direction at the radial distance to the target (this variable was used as the 'reach angle' measure in the paper)
     raw_ep_hand_ang- actual hand movement direction at the radial distance to the target (without subtracting target location)
-    MT- movement time (the interval between the time at which the amplitude of the movement exceeded 1 cm from the start location to the time at which the amplitude reached the radial distance of the target)
-    RT- reaction time (the interval between the imperative onset and the time that the hand position exceeded a distance of 1 cm from the start location)
+    MT- movement time
+    RT- reaction time
     ST- search time (the time required to move back to the start location)
     CN- cycle number
 
